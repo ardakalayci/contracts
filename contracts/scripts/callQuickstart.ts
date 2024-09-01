@@ -1,46 +1,47 @@
 // Import ethers from Hardhat package
 import readline from "readline";
 
-const {ethers} = require("hardhat");
+const { ethers } = require("hardhat");
+//nullable int
 
+let chatId = -1;
 async function main() {
   const contractABI = [
-    "function initializeDalleCall(string memory message) public returns (uint)",
-    "function lastResponse() public view returns (string)"
+    "function startChat(string memory message) public returns (uint)",
+    "function addMessage(string memory message, uint runId) public",
+    "function getMessageHistory(uint chatId) public view returns (tuple(string role, tuple(string contentType,string value)[] content)[] memory)"
   ];
 
-  if (!process.env.QUICKSTART_CONTRACT_ADDRESS) {
-    throw new Error("QUICKSTART_CONTRACT_ADDRESS env variable is not set.");
-  }
-
-  const contractAddress = process.env.QUICKSTART_CONTRACT_ADDRESS;
+  const contractAddress = "0x079efB8329C1a9e92153DF1E1757bDF823e1CA31";
   const [signer] = await ethers.getSigners();
 
   // Create a contract instance
   const contract = new ethers.Contract(contractAddress, contractABI, signer);
-
-  // The content of the image you want to generate
   const message = await getUserInput();
 
   // Call the startChat function
-  const transactionResponse = await contract.initializeDalleCall(message);
+
+  const transactionResponse = chatId != -1 ? await contract.addMessage(message, chatId) : await contract.startChat(message);
   const receipt = await transactionResponse.wait();
   console.log(`Transaction sent, hash: ${receipt.hash}.\nExplorer: https://explorer.galadriel.com/tx/${receipt.hash}`)
-  console.log(`Image generation started with message: "${message}"`);
+  console.log(`Start with message: "${message}"`);
+
+  chatId = chatId != -1 ? chatId : parseInt(BigInt(receipt["logs"][1].topics[2]).toString())
 
   // loop and sleep by 1000ms, and keep printing `lastResponse` in the contract.
-  let lastResponse = await contract.lastResponse();
+  let lastResponse = await contract.getMessageHistory(chatId);
   let newResponse = lastResponse;
 
   // print w/o newline
   console.log("Waiting for response: ");
-  while (newResponse === lastResponse) {
+  while (newResponse.toString() === lastResponse.toString()) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    newResponse = await contract.lastResponse();
+    newResponse = await contract.getMessageHistory(chatId);
     console.log(".");
   }
 
-  console.log(`Image generation completed, image URL: ${newResponse}`)
+  console.log(`answer: ${newResponse.toString().split("text,")[newResponse.toString().split("text,").length - 1]}`);
+  await main();
 
 }
 
@@ -59,7 +60,7 @@ async function getUserInput(): Promise<string | undefined> {
   }
 
   try {
-    const input = await question("Enter an image description: ")
+    const input = await question("write something: ")
     rl.close()
     return input
   } catch (err) {
